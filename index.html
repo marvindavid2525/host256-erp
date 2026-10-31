@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101522">
+  <meta name="description" content="Host256 ERP — one clear view of your business. A Uganda-focused ERP dashboard prototype.">
+  <title>Host256 ERP — Business overview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" aria-label="Host256 ERP overview">
+        <span class="brand-mark">h<span>·</span></span>
+        <span class="brand-name">host<span>256</span><small>BUSINESS SUITE</small></span>
+      </a>
+      <div class="workspace-picker">
+        <span class="workspace-avatar">K</span>
+        <span class="workspace-info"><strong>Kampala Foods Ltd.</strong><small>Business workspace</small></span>
+        <span class="workspace-chevron">⌄</span>
+      </div>
+      <p class="nav-caption">WORKSPACE</p>
+      <nav class="side-nav" id="side-nav" aria-label="ERP modules">
+        <button class="nav-item active" type="button" data-view="overview"><span class="nav-icon">◫</span>Overview</button>
+        <button class="nav-item" type="button" data-view="pos"><span class="nav-icon">▦</span>Point of sale<span class="nav-tag">POS</span></button>
+        <button class="nav-item" type="button" data-view="sales"><span class="nav-icon">↗</span>Sales</button>
+        <button class="nav-item" type="button" data-view="inventory"><span class="nav-icon">▤</span>Inventory<span class="nav-alert" id="low-stock-count">2</span></button>
+        <button class="nav-item" type="button" data-view="finance"><span class="nav-icon">◉</span>Accounting</button>
+        <button class="nav-item" type="button" data-view="people"><span class="nav-icon">♙</span>People & HR</button>
+        <button class="nav-item" type="button" data-view="customers"><span class="nav-icon">♧</span>Customers</button>
+        <button class="nav-item" type="button" data-view="reports"><span class="nav-icon">▥</span>Reports</button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="help-card"><span class="help-icon">✳</span><strong>Need a hand?</strong><p>Our Kampala-based team is happy to help.</p><a href="mailto:hello@host256.com">Talk to support <span>↗</span></a></div>
+      <button class="profile-button" type="button" id="profile-button">
+        <span class="profile-avatar">JM</span><span class="profile-info"><strong>James M.</strong><small>Administrator</small></span><span class="profile-menu">···</span>
+      </button>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobile-menu" type="button" aria-label="Open navigation">☰</button>
+        <div class="breadcrumb"><span>Kampala Foods Ltd.</span><b>/</b><strong id="breadcrumb-current">Overview</strong></div>
+        <div class="topbar-actions">
+          <label class="search-box"><span>⌕</span><input id="global-search" type="search" placeholder="Search anything..." aria-label="Search"><kbd>⌘ K</kbd></label>
+          <button class="icon-button notification-button" type="button" aria-label="Notifications">♧<i></i></button>
+          <span class="topbar-divider"></span>
+          <button class="date-select" id="date-select" type="button"><span>◷</span> This month <b>⌄</b></button>
+        </div>
+      </header>
+
+      <section class="page-content" id="page-content" aria-live="polite"></section>
+      <footer class="page-footer"><span>Host256 ERP <b>·</b> Business moves better together.</span><span>Prototype data · Kampala, Uganda</span></footer>
+    </main>
+  </div>
+  <div class="mobile-scrim" id="mobile-scrim"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog class="pos-dialog" id="pos-dialog">
+    <form method="dialog" class="dialog-close-row"><button class="icon-button" aria-label="Close sale dialog">×</button></form>
+    <div class="dialog-heading"><span class="dialog-icon">▦</span><p class="overline">QUICK SALE</p><h2>Ring up a sale</h2><p>Record a counter sale in a few taps.</p></div>
+    <form id="sale-form">
+      <label class="form-label">Product<select id="sale-product" required></select></label>
+      <label class="form-label">Quantity<input id="sale-quantity" type="number" min="1" value="1" required></label>
+      <label class="form-label">Payment method<select id="sale-payment"><option>Mobile Money</option><option>Cash</option><option>Card</option></select></label>
+      <div class="sale-total"><span>Total</span><strong id="sale-total">UGX 0</strong></div>
+      <button class="primary-button full-button" type="submit">Complete sale <span>↗</span></button>
+    </form>
+  </dialog>
+</body>
+</html>
