@@ -1,0 +1,925 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // 1. GLOBAL SAFETY NET (Default-Deny Catch-All)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 2. HARDENED PRIMITIVE & MULTI-ROLE RBAC HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'amarvinmulindwa2004@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isNonNegativeNumber(val) {
+      return val is number && val >= 0 && val <= 1000000000000;
+    }
+
+    function isSignedBoundedNumber(val) {
+      return val is number && val >= -1000000000000 && val <= 1000000000000;
+    }
+
+    function isValidOptionalEmailList(data) {
+      return !('authorizedEmails' in data) || (
+        data.authorizedEmails is list &&
+        data.authorizedEmails.size() <= 25 &&
+        (
+          data.authorizedEmails.size() == 0 ||
+          (data.authorizedEmails[0] is string && data.authorizedEmails[0].size() >= 3 && data.authorizedEmails[0].size() <= 120)
+        )
+      );
+    }
+
+    function isValidOptionalCreatorUid(data) {
+      return !('createdByUid' in data) || isValidId(data.createdByUid);
+    }
+
+    // Synchronous O(1) Workspace RBAC Gate with Instant Revocation Check
+    function getBindingData(ownerId) {
+      return get(/databases/$(database)/documents/workspaceBindings/$(ownerId)/members/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaffWithRole(ownerId, allowedRoles) {
+      return isVerifiedUser() &&
+        exists(/databases/$(database)/documents/workspaceBindings/$(ownerId)/members/$(request.auth.uid)) &&
+        exists(/databases/$(database)/documents/staffMembers/$(getBindingData(ownerId).inviteId)) &&
+        get(/databases/$(database)/documents/staffMembers/$(getBindingData(ownerId).inviteId)).data.ownerId == ownerId &&
+        get(/databases/$(database)/documents/staffMembers/$(getBindingData(ownerId).inviteId)).data.staffEmail == request.auth.token.email &&
+        get(/databases/$(database)/documents/staffMembers/$(getBindingData(ownerId).inviteId)).data.status == 'active' &&
+        get(/databases/$(database)/documents/staffMembers/$(getBindingData(ownerId).inviteId)).data.role in allowedRoles;
+    }
+
+    function isOwnerOrStaffRole(ownerId, allowedRoles) {
+      return (isVerifiedUser() && request.auth.uid == ownerId) ||
+        isActiveStaffWithRole(ownerId, allowedRoles) ||
+        isAdmin();
+    }
+
+    function canCreateForWorkspace(data, allowedRoles) {
+      return (isVerifiedUser() && data.ownerId == request.auth.uid) ||
+        (
+          isVerifiedUser() &&
+          'createdByUid' in data &&
+          data.createdByUid == request.auth.uid &&
+          isActiveStaffWithRole(data.ownerId, allowedRoles)
+        ) ||
+        isAdmin();
+    }
+
+    // =========================================================================
+    // 3. ENTITY VALIDATION BLUEPRINTS
+    // =========================================================================
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidBusinessSettings(data) {
+      return data.keys().hasAll([
+          'ownerId', 'businessName', 'tagline', 'currency', 'taxRate',
+          'monthlySalesTarget', 'receiptHeader', 'receiptFooter',
+          'branchAddress', 'businessPhone', 'enabledModules', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'businessName', 'tagline', 'currency', 'taxRate',
+          'monthlySalesTarget', 'receiptHeader', 'receiptFooter',
+          'branchAddress', 'businessPhone', 'enabledModules',
+          'managerPin', 'defaultWarrantyDays', 'authorizedEmails',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 120 &&
+        data.tagline is string && data.tagline.size() <= 160 &&
+        data.currency is string && data.currency.size() <= 8 &&
+        data.currency in ['UGX', 'USD', 'KES', 'EUR', 'GBP'] &&
+        data.taxRate is number && data.taxRate >= 0 && data.taxRate <= 100 &&
+        isNonNegativeNumber(data.monthlySalesTarget) &&
+        data.receiptHeader is string && data.receiptHeader.size() <= 200 &&
+        data.receiptFooter is string && data.receiptFooter.size() <= 240 &&
+        data.branchAddress is string && data.branchAddress.size() <= 180 &&
+        data.businessPhone is string && data.businessPhone.size() <= 40 &&
+        data.enabledModules is list &&
+        data.enabledModules.size() >= 1 &&
+        data.enabledModules.size() <= 10 &&
+        data.enabledModules[0] is string &&
+        data.enabledModules[0].size() <= 32 &&
+        data.enabledModules.hasOnly(['pos', 'sales', 'inventory', 'accounting', 'hr', 'crm', 'reports']) &&
+        (!('managerPin' in data) || (data.managerPin is string && data.managerPin.size() <= 8)) &&
+        (!('defaultWarrantyDays' in data) || (data.defaultWarrantyDays is number && data.defaultWarrantyDays >= 0 && data.defaultWarrantyDays <= 3650)) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStaffMember(data) {
+      return data.keys().hasAll([
+          'ownerId', 'workspaceName', 'staffName', 'staffEmail', 'role',
+          'assignedBranch', 'status', 'invitedByEmail', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'workspaceName', 'staffName', 'staffEmail', 'role',
+          'assignedBranch', 'status', 'invitedByEmail', 'createdByUid',
+          'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.workspaceName is string && data.workspaceName.size() >= 1 && data.workspaceName.size() <= 120 &&
+        data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+        data.staffEmail is string && data.staffEmail.size() >= 3 && data.staffEmail.size() <= 120 &&
+        data.role is string && data.role.size() <= 24 &&
+        data.role in ['Admin', 'Cashier', 'Warehouse', 'Accountant'] &&
+        data.assignedBranch is string && data.assignedBranch.size() <= 100 &&
+        data.status is string && data.status.size() <= 16 &&
+        data.status in ['active', 'revoked'] &&
+        data.invitedByEmail is string && data.invitedByEmail.size() >= 3 && data.invitedByEmail.size() <= 120 &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWorkspaceBinding(data) {
+      return data.keys().hasAll([
+          'ownerId', 'staffUid', 'staffEmail', 'inviteId', 'role', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'staffUid', 'staffEmail', 'inviteId', 'role', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.staffUid) &&
+        data.staffUid == request.auth.uid &&
+        data.staffEmail is string && data.staffEmail.size() >= 3 && data.staffEmail.size() <= 120 &&
+        data.staffEmail == request.auth.token.email &&
+        isValidId(data.inviteId) &&
+        data.role is string && data.role.size() <= 24 &&
+        data.role in ['Admin', 'Cashier', 'Warehouse', 'Accountant'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidShiftRegister(data) {
+      return data.keys().hasAll([
+          'ownerId', 'shiftNumber', 'cashierName', 'cashierEmail', 'openedByUid',
+          'openedAt', 'closedAt', 'openingFloat', 'cashSalesTotal', 'mobileMoneyTotal',
+          'cardSalesTotal', 'creditSalesTotal', 'cashRefundsTotal',
+          'expectedCashInDrawer', 'countedCashInDrawer', 'varianceAmount',
+          'status', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'shiftNumber', 'cashierName', 'cashierEmail', 'openedByUid',
+          'openedAt', 'closedAt', 'closedByName', 'openingFloat', 'cashSalesTotal',
+          'mobileMoneyTotal', 'cardSalesTotal', 'creditSalesTotal', 'cashRefundsTotal',
+          'expectedCashInDrawer', 'countedCashInDrawer', 'varianceAmount',
+          'status', 'notes', 'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.shiftNumber is string && data.shiftNumber.size() >= 1 && data.shiftNumber.size() <= 40 &&
+        data.cashierName is string && data.cashierName.size() >= 1 && data.cashierName.size() <= 100 &&
+        data.cashierEmail is string && data.cashierEmail.size() <= 120 &&
+        isValidId(data.openedByUid) &&
+        data.openedAt is string && data.openedAt.size() >= 10 && data.openedAt.size() <= 32 &&
+        data.closedAt is string && data.closedAt.size() <= 32 &&
+        (!('closedByName' in data) || (data.closedByName is string && data.closedByName.size() <= 100)) &&
+        isNonNegativeNumber(data.openingFloat) &&
+        isNonNegativeNumber(data.cashSalesTotal) &&
+        isNonNegativeNumber(data.mobileMoneyTotal) &&
+        isNonNegativeNumber(data.cardSalesTotal) &&
+        isNonNegativeNumber(data.creditSalesTotal) &&
+        isNonNegativeNumber(data.cashRefundsTotal) &&
+        isNonNegativeNumber(data.expectedCashInDrawer) &&
+        isNonNegativeNumber(data.countedCashInDrawer) &&
+        isSignedBoundedNumber(data.varianceAmount) &&
+        data.status is string && data.status.size() <= 16 &&
+        data.status in ['open', 'closed'] &&
+        data.notes is string && data.notes.size() <= 240 &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+          'ownerId', 'sku', 'name', 'category', 'unit',
+          'costPrice', 'sellingPrice', 'stockQty', 'reorderLevel',
+          'supplierName', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'sku', 'name', 'category', 'unit',
+          'costPrice', 'sellingPrice', 'stockQty', 'reorderLevel',
+          'supplierName', 'status', 'warrantyDays', 'requiresSerial',
+          'createdByUid', 'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 40 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+        data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 24 &&
+        isNonNegativeNumber(data.costPrice) &&
+        isNonNegativeNumber(data.sellingPrice) &&
+        isNonNegativeNumber(data.stockQty) &&
+        isNonNegativeNumber(data.reorderLevel) &&
+        data.supplierName is string && data.supplierName.size() <= 100 &&
+        data.status is string && data.status.size() <= 16 &&
+        data.status in ['active', 'archived'] &&
+        (!('warrantyDays' in data) || (data.warrantyDays is number && data.warrantyDays >= 0 && data.warrantyDays <= 3650)) &&
+        (!('requiresSerial' in data) || (data.requiresSerial is bool)) &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPurchaseOrder(data) {
+      return data.keys().hasAll([
+          'ownerId', 'poNumber', 'supplierName', 'productId', 'productName',
+          'quantity', 'unitCost', 'totalCost', 'status', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'poNumber', 'supplierName', 'supplierInvoiceNo',
+          'productId', 'productName', 'quantity', 'unitCost', 'totalCost',
+          'amountPaid', 'balanceDue', 'paymentStatus', 'dueDate', 'paymentMethod',
+          'status', 'notes', 'createdByUid', 'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.poNumber is string && data.poNumber.size() >= 1 && data.poNumber.size() <= 40 &&
+        data.supplierName is string && data.supplierName.size() >= 1 && data.supplierName.size() <= 100 &&
+        (!('supplierInvoiceNo' in data) || (data.supplierInvoiceNo is string && data.supplierInvoiceNo.size() <= 60)) &&
+        isValidId(data.productId) &&
+        data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 140 &&
+        data.quantity is number && data.quantity > 0 && data.quantity <= 1000000 &&
+        isNonNegativeNumber(data.unitCost) &&
+        isNonNegativeNumber(data.totalCost) &&
+        (!('amountPaid' in data) || isNonNegativeNumber(data.amountPaid)) &&
+        (!('balanceDue' in data) || isNonNegativeNumber(data.balanceDue)) &&
+        (!('paymentStatus' in data) || (data.paymentStatus is string && data.paymentStatus.size() <= 16 && data.paymentStatus in ['paid', 'partial', 'unpaid'])) &&
+        (!('dueDate' in data) || (data.dueDate is string && data.dueDate.size() <= 32)) &&
+        (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 32)) &&
+        data.status is string && data.status.size() <= 16 &&
+        data.status in ['received', 'cancelled'] &&
+        data.notes is string && data.notes.size() <= 240 &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSaleTransaction(data) {
+      return data.keys().hasAll([
+          'ownerId', 'receiptNumber', 'customerId', 'customerName', 'cashierName',
+          'paymentMethod', 'itemCount', 'itemsSummary', 'subtotal', 'discountAmount',
+          'taxAmount', 'totalAmount', 'cogsAmount', 'amountPaid', 'changeDue',
+          'status', 'notes', 'saleDate', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'receiptNumber', 'customerId', 'customerName', 'cashierName',
+          'paymentMethod', 'itemCount', 'itemsSummary', 'serialsSummary',
+          'warrantyUntil', 'shiftId', 'subtotal', 'discountAmount',
+          'taxAmount', 'totalAmount', 'cogsAmount', 'amountPaid', 'changeDue',
+          'status', 'notes', 'saleDate', 'createdByUid', 'authorizedEmails',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.receiptNumber is string && data.receiptNumber.size() >= 1 && data.receiptNumber.size() <= 40 &&
+        data.customerId is string && data.customerId.size() <= 128 &&
+        (data.customerId == '' || isValidId(data.customerId)) &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 100 &&
+        data.cashierName is string && data.cashierName.size() >= 1 && data.cashierName.size() <= 100 &&
+        data.paymentMethod is string && data.paymentMethod.size() <= 32 &&
+        data.paymentMethod in ['Cash', 'MTN Mobile Money', 'Airtel Money', 'Card', 'Customer Credit'] &&
+        data.itemCount is number && data.itemCount >= 1 && data.itemCount <= 500 &&
+        data.itemsSummary is string && data.itemsSummary.size() >= 1 && data.itemsSummary.size() <= 400 &&
+        (!('serialsSummary' in data) || (data.serialsSummary is string && data.serialsSummary.size() <= 400)) &&
+        (!('warrantyUntil' in data) || (data.warrantyUntil is string && data.warrantyUntil.size() <= 32)) &&
+        (!('shiftId' in data) || (data.shiftId is string && data.shiftId.size() <= 128 && (data.shiftId == '' || isValidId(data.shiftId)))) &&
+        isNonNegativeNumber(data.subtotal) &&
+        isNonNegativeNumber(data.discountAmount) &&
+        isNonNegativeNumber(data.taxAmount) &&
+        isNonNegativeNumber(data.totalAmount) &&
+        isNonNegativeNumber(data.cogsAmount) &&
+        isNonNegativeNumber(data.amountPaid) &&
+        isNonNegativeNumber(data.changeDue) &&
+        data.status is string && data.status.size() <= 16 &&
+        data.status in ['completed', 'refunded'] &&
+        data.notes is string && data.notes.size() <= 240 &&
+        data.saleDate is string && data.saleDate.size() >= 10 && data.saleDate.size() <= 32 &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSaleItem(data) {
+      return data.keys().hasAll([
+          'ownerId', 'saleId', 'productId', 'sku', 'productName',
+          'quantity', 'unitPrice', 'unitCost', 'lineDiscount', 'lineTotal', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'saleId', 'productId', 'sku', 'productName',
+          'quantity', 'unitPrice', 'unitCost', 'lineDiscount', 'lineTotal',
+          'serialNumbers', 'warrantyDays', 'warrantyExpiryDate',
+          'createdByUid', 'authorizedEmails', 'createdAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.saleId) &&
+        isValidId(data.productId) &&
+        data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 40 &&
+        data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 140 &&
+        data.quantity is number && data.quantity > 0 && data.quantity <= 100000 &&
+        isNonNegativeNumber(data.unitPrice) &&
+        isNonNegativeNumber(data.unitCost) &&
+        isNonNegativeNumber(data.lineDiscount) &&
+        isNonNegativeNumber(data.lineTotal) &&
+        (!('serialNumbers' in data) || (data.serialNumbers is string && data.serialNumbers.size() <= 240)) &&
+        (!('warrantyDays' in data) || (data.warrantyDays is number && data.warrantyDays >= 0 && data.warrantyDays <= 3650)) &&
+        (!('warrantyExpiryDate' in data) || (data.warrantyExpiryDate is string && data.warrantyExpiryDate.size() <= 32)) &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidLedgerEntry(data) {
+      return data.keys().hasAll([
+          'ownerId', 'entryRef', 'entryType', 'category', 'description',
+          'amount', 'paymentMethod', 'sourceModule', 'entryDate', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'entryRef', 'entryType', 'category', 'description',
+          'amount', 'paymentMethod', 'sourceModule', 'entryDate',
+          'createdByUid', 'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.entryRef is string && data.entryRef.size() >= 1 && data.entryRef.size() <= 40 &&
+        data.entryType is string && data.entryType.size() <= 16 &&
+        data.entryType in ['income', 'expense'] &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 240 &&
+        data.amount is number && data.amount > 0 && data.amount <= 1000000000000 &&
+        data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 32 &&
+        data.sourceModule is string && data.sourceModule.size() <= 16 &&
+        data.sourceModule in ['POS', 'Inventory', 'HR', 'Manual', 'Sales', 'Payables'] &&
+        data.entryDate is string && data.entryDate.size() >= 10 && data.entryDate.size() <= 32 &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidEmployee(data) {
+      return data.keys().hasAll([
+          'ownerId', 'staffCode', 'fullName', 'roleTitle', 'department',
+          'phone', 'email', 'monthlySalary', 'shiftSchedule', 'attendanceStatus',
+          'payrollStatus', 'lastPaidDate', 'employmentStatus', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'staffCode', 'fullName', 'roleTitle', 'department',
+          'phone', 'email', 'monthlySalary', 'shiftSchedule', 'attendanceStatus',
+          'payrollStatus', 'lastPaidDate', 'employmentStatus', 'systemRole',
+          'createdByUid', 'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.staffCode is string && data.staffCode.size() >= 1 && data.staffCode.size() <= 32 &&
+        data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100 &&
+        data.roleTitle is string && data.roleTitle.size() >= 1 && data.roleTitle.size() <= 80 &&
+        data.department is string && data.department.size() >= 1 && data.department.size() <= 60 &&
+        data.phone is string && data.phone.size() >= 1 && data.phone.size() <= 40 &&
+        data.email is string && data.email.size() <= 120 &&
+        isNonNegativeNumber(data.monthlySalary) &&
+        data.shiftSchedule is string && data.shiftSchedule.size() >= 1 && data.shiftSchedule.size() <= 60 &&
+        data.attendanceStatus is string && data.attendanceStatus.size() <= 24 &&
+        data.attendanceStatus in ['Present', 'On Shift', 'Off Duty', 'On Leave'] &&
+        data.payrollStatus is string && data.payrollStatus.size() <= 16 &&
+        data.payrollStatus in ['Paid', 'Pending'] &&
+        data.lastPaidDate is string && data.lastPaidDate.size() <= 32 &&
+        data.employmentStatus is string && data.employmentStatus.size() <= 16 &&
+        data.employmentStatus in ['active', 'inactive'] &&
+        (!('systemRole' in data) || (data.systemRole is string && data.systemRole.size() <= 24 && data.systemRole in ['Admin', 'Cashier', 'Warehouse', 'Accountant', 'None'])) &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll([
+          'ownerId', 'customerCode', 'fullName', 'phone', 'email', 'address',
+          'segment', 'loyaltyPoints', 'creditBalance', 'totalSpent',
+          'ordersCount', 'lastOrderDate', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'customerCode', 'fullName', 'phone', 'email', 'address',
+          'segment', 'loyaltyPoints', 'creditBalance', 'totalSpent',
+          'ordersCount', 'lastOrderDate', 'notes', 'createdByUid',
+          'authorizedEmails', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.customerCode is string && data.customerCode.size() >= 1 && data.customerCode.size() <= 32 &&
+        data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100 &&
+        data.phone is string && data.phone.size() >= 1 && data.phone.size() <= 40 &&
+        data.email is string && data.email.size() <= 120 &&
+        data.address is string && data.address.size() <= 180 &&
+        data.segment is string && data.segment.size() <= 24 &&
+        data.segment in ['Retail', 'Wholesale', 'VIP', 'Corporate'] &&
+        isNonNegativeNumber(data.loyaltyPoints) &&
+        isNonNegativeNumber(data.creditBalance) &&
+        isNonNegativeNumber(data.totalSpent) &&
+        isNonNegativeNumber(data.ordersCount) &&
+        data.lastOrderDate is string && data.lastOrderDate.size() <= 32 &&
+        data.notes is string && data.notes.size() <= 240 &&
+        isValidOptionalCreatorUid(data) &&
+        isValidOptionalEmailList(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // 4. COLLECTION MATCH BLOCKS
+    // =========================================================================
+
+    match /admins/{adminUid} {
+      allow get: if isVerifiedUser() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if false;
+      allow create: if isVerifiedUser() &&
+        isValidId(adminUid) &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == adminUid &&
+        incoming().createdAt == request.time &&
+        isBootstrappedAdmin();
+      allow update: if false;
+      allow delete: if isVerifiedUser() && isValidId(adminUid) && isBootstrappedAdmin();
+    }
+
+    match /businessSettings/{ownerId} {
+      allow get: if isVerifiedUser() && isValidId(ownerId) && (
+        request.auth.uid == ownerId ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isActiveStaffWithRole(ownerId, ['Admin', 'Cashier', 'Warehouse', 'Accountant']) ||
+        isAdmin()
+      );
+      allow list: if false;
+      allow create: if isVerifiedUser() &&
+        isValidId(ownerId) &&
+        request.auth.uid == ownerId &&
+        incoming().ownerId == ownerId &&
+        isValidBusinessSettings(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() &&
+        isValidId(ownerId) &&
+        isValidBusinessSettings(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(ownerId, ['Admin']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'businessName', 'tagline', 'currency', 'taxRate', 'monthlySalesTarget',
+              'receiptHeader', 'receiptFooter', 'branchAddress', 'businessPhone',
+              'enabledModules', 'managerPin', 'defaultWarrantyDays', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /staffMembers/{inviteId} {
+      allow get: if isVerifiedUser() && isValidId(inviteId) && (
+        existing().ownerId == request.auth.uid ||
+        existing().staffEmail == request.auth.token.email ||
+        isActiveStaffWithRole(existing().ownerId, ['Admin']) ||
+        isAdmin()
+      );
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        existing().staffEmail == request.auth.token.email ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(inviteId) &&
+        isValidStaffMember(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin']);
+      allow update: if isVerifiedUser() &&
+        isValidId(inviteId) &&
+        isValidStaffMember(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'workspaceName', 'staffName', 'staffEmail', 'role',
+              'assignedBranch', 'status', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() &&
+        isValidId(inviteId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin']);
+    }
+
+    match /workspaceBindings/{ownerId}/members/{staffUid} {
+      allow get: if isVerifiedUser() && isValidId(ownerId) && isValidId(staffUid) && (
+        staffUid == request.auth.uid ||
+        ownerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if false;
+      allow create: if isVerifiedUser() &&
+        isValidId(ownerId) &&
+        isValidId(staffUid) &&
+        staffUid == request.auth.uid &&
+        incoming().ownerId == ownerId &&
+        isValidWorkspaceBinding(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)) &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.ownerId == ownerId &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.staffEmail == request.auth.token.email &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.status == 'active' &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.role == incoming().role;
+      allow update: if isVerifiedUser() &&
+        isValidId(ownerId) &&
+        isValidId(staffUid) &&
+        staffUid == request.auth.uid &&
+        incoming().ownerId == ownerId &&
+        isValidWorkspaceBinding(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().staffUid == existing().staffUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['inviteId', 'role', 'staffEmail', 'updatedAt']) &&
+        exists(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)) &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.ownerId == ownerId &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.staffEmail == request.auth.token.email &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.status == 'active' &&
+        get(/databases/$(database)/documents/staffMembers/$(incoming().inviteId)).data.role == incoming().role;
+      allow delete: if isVerifiedUser() && isValidId(ownerId) && isValidId(staffUid) && (
+        staffUid == request.auth.uid ||
+        ownerId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    match /shiftRegisters/{shiftId} {
+      allow get: if isVerifiedUser() && isValidId(shiftId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier', 'Accountant']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(shiftId) &&
+        isValidShiftRegister(incoming()) &&
+        incoming().openedByUid == request.auth.uid &&
+        incoming().status == 'open' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isOwnerOrStaffRole(incoming().ownerId, ['Admin', 'Cashier']);
+      allow update: if isVerifiedUser() &&
+        isValidId(shiftId) &&
+        isValidShiftRegister(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().shiftNumber == existing().shiftNumber &&
+        incoming().openedByUid == existing().openedByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().status != 'closed' || existing().ownerId == request.auth.uid || isAdmin()) &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'closedAt', 'closedByName', 'cashSalesTotal', 'mobileMoneyTotal',
+              'cardSalesTotal', 'creditSalesTotal', 'cashRefundsTotal',
+              'expectedCashInDrawer', 'countedCashInDrawer', 'varianceAmount',
+              'status', 'notes', 'authorizedEmails', 'updatedAt'
+            ])
+          ) ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['authorizedEmails', 'updatedAt'])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(shiftId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin']);
+    }
+
+    match /products/{productId} {
+      allow get: if isVerifiedUser() && isValidId(productId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier', 'Warehouse', 'Accountant']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(productId) &&
+        isValidProduct(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin', 'Warehouse']);
+      allow update: if isVerifiedUser() &&
+        isValidId(productId) &&
+        isValidProduct(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier', 'Warehouse', 'Accountant']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['stockQty', 'costPrice', 'updatedAt'])
+          ) ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Warehouse']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sku', 'name', 'category', 'unit', 'costPrice', 'sellingPrice',
+              'stockQty', 'reorderLevel', 'supplierName', 'status',
+              'warrantyDays', 'requiresSerial', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(productId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Warehouse']);
+    }
+
+    match /purchaseOrders/{poId} {
+      allow get: if isVerifiedUser() && isValidId(poId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Warehouse', 'Accountant']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(poId) &&
+        isValidPurchaseOrder(incoming()) &&
+        incoming().status == 'received' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin', 'Warehouse', 'Accountant']) &&
+        existsAfter(/databases/$(database)/documents/products/$(incoming().productId)) &&
+        getAfter(/databases/$(database)/documents/products/$(incoming().productId)).data.ownerId == incoming().ownerId;
+      allow update: if isVerifiedUser() &&
+        isValidId(poId) &&
+        isValidPurchaseOrder(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().productId == existing().productId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().status != 'cancelled' || existing().ownerId == request.auth.uid || isAdmin()) &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Warehouse', 'Accountant']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'amountPaid', 'balanceDue', 'paymentStatus', 'paymentMethod',
+              'dueDate', 'supplierInvoiceNo', 'status', 'notes', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(poId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin']);
+    }
+
+    match /sales/{saleId} {
+      allow get: if isVerifiedUser() && isValidId(saleId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier', 'Accountant']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(saleId) &&
+        isValidSaleTransaction(incoming()) &&
+        incoming().status == 'completed' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin', 'Cashier']) &&
+        (
+          incoming().customerId == '' ||
+          (
+            existsAfter(/databases/$(database)/documents/customers/$(incoming().customerId)) &&
+            getAfter(/databases/$(database)/documents/customers/$(incoming().customerId)).data.ownerId == incoming().ownerId
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(saleId) &&
+        isValidSaleTransaction(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().receiptNumber == existing().receiptNumber &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().status != 'refunded' || existing().ownerId == request.auth.uid || isAdmin()) &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Accountant']) &&
+            incoming().status == 'refunded' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])
+          ) ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['authorizedEmails', 'updatedAt'])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(saleId) && isAdmin();
+
+      match /items/{itemId} {
+        allow get: if isVerifiedUser() &&
+          isValidId(saleId) &&
+          isValidId(itemId) &&
+          isOwnerOrStaffRole(
+            get(/databases/$(database)/documents/sales/$(saleId)).data.ownerId,
+            ['Admin', 'Cashier', 'Accountant']
+          );
+        allow list: if isVerifiedUser() && (
+          existing().ownerId == request.auth.uid ||
+          ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+          isAdmin()
+        );
+        allow create: if isVerifiedUser() &&
+          isValidId(saleId) &&
+          isValidId(itemId) &&
+          isValidSaleItem(incoming()) &&
+          incoming().saleId == saleId &&
+          incoming().createdAt == request.time &&
+          canCreateForWorkspace(incoming(), ['Admin', 'Cashier']) &&
+          existsAfter(/databases/$(database)/documents/sales/$(saleId)) &&
+          getAfter(/databases/$(database)/documents/sales/$(saleId)).data.ownerId == incoming().ownerId &&
+          existsAfter(/databases/$(database)/documents/products/$(incoming().productId)) &&
+          getAfter(/databases/$(database)/documents/products/$(incoming().productId)).data.ownerId == incoming().ownerId;
+        allow update: if isVerifiedUser() &&
+          isValidId(saleId) &&
+          isValidId(itemId) &&
+          isValidSaleItem(incoming()) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().saleId == existing().saleId &&
+          incoming().createdAt == existing().createdAt &&
+          isOwnerOrStaffRole(existing().ownerId, ['Admin']) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['authorizedEmails']);
+        allow delete: if isVerifiedUser() &&
+          isValidId(saleId) &&
+          isValidId(itemId) &&
+          isAdmin();
+      }
+    }
+
+    match /ledgerEntries/{entryId} {
+      allow get: if isVerifiedUser() && isValidId(entryId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Accountant']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(entryId) &&
+        isValidLedgerEntry(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin', 'Cashier', 'Warehouse', 'Accountant']);
+      allow update: if isVerifiedUser() &&
+        isValidId(entryId) &&
+        isValidLedgerEntry(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().entryRef == existing().entryRef &&
+        incoming().sourceModule == existing().sourceModule &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Accountant']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'category', 'description', 'amount', 'paymentMethod', 'entryDate', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(entryId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Accountant']);
+    }
+
+    match /employees/{employeeId} {
+      allow get: if isVerifiedUser() && isValidId(employeeId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(employeeId) &&
+        isValidEmployee(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin']);
+      allow update: if isVerifiedUser() &&
+        isValidId(employeeId) &&
+        isValidEmployee(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().staffCode == existing().staffCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'roleTitle', 'department', 'phone', 'email',
+              'monthlySalary', 'shiftSchedule', 'attendanceStatus',
+              'payrollStatus', 'lastPaidDate', 'employmentStatus',
+              'systemRole', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(employeeId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin']);
+    }
+
+    match /customers/{customerId} {
+      allow get: if isVerifiedUser() && isValidId(customerId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier', 'Accountant']);
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        ('authorizedEmails' in existing() && request.auth.token.email in existing().authorizedEmails) ||
+        isAdmin()
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(customerId) &&
+        isValidCustomer(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        canCreateForWorkspace(incoming(), ['Admin', 'Cashier', 'Accountant']);
+      allow update: if isVerifiedUser() &&
+        isValidId(customerId) &&
+        isValidCustomer(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().customerCode == existing().customerCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Cashier', 'Accountant']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'loyaltyPoints', 'creditBalance', 'totalSpent', 'ordersCount', 'lastOrderDate', 'updatedAt'
+            ])
+          ) ||
+          (
+            isOwnerOrStaffRole(existing().ownerId, ['Admin', 'Accountant']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'phone', 'email', 'address', 'segment',
+              'loyaltyPoints', 'creditBalance', 'totalSpent',
+              'ordersCount', 'lastOrderDate', 'notes', 'authorizedEmails', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerifiedUser() && isValidId(customerId) &&
+        isOwnerOrStaffRole(existing().ownerId, ['Admin']);
+    }
+  }
+}

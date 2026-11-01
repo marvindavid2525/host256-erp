@@ -1,0 +1,336 @@
+{
+  "entities": {
+    "BusinessSettings": {
+      "title": "BusinessSettings",
+      "description": "Tenant business configuration, warranty defaults, manager PIN, and customization settings.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "businessName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "tagline": { "type": "string", "minLength": 0, "maxLength": 160 },
+        "currency": { "type": "string", "enum": ["UGX", "USD", "KES", "EUR", "GBP"], "maxLength": 8 },
+        "taxRate": { "type": "number" },
+        "monthlySalesTarget": { "type": "number" },
+        "receiptHeader": { "type": "string", "minLength": 0, "maxLength": 200 },
+        "receiptFooter": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "branchAddress": { "type": "string", "minLength": 0, "maxLength": 180 },
+        "businessPhone": { "type": "string", "minLength": 0, "maxLength": 40 },
+        "enabledModules": { "type": "array", "description": "Active ERP module identifiers (max 10)." },
+        "managerPin": { "type": "string", "minLength": 0, "maxLength": 8 },
+        "defaultWarrantyDays": { "type": "number" },
+        "authorizedEmails": { "type": "array", "description": "Bounded list of active staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "businessName", "tagline", "currency", "taxRate", "monthlySalesTarget", "receiptHeader", "receiptFooter", "branchAddress", "businessPhone", "enabledModules", "createdAt", "updatedAt"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Workspace staff login invitation and role-based access permission record.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "staffEmail": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["Admin", "Cashier", "Warehouse", "Accountant"], "maxLength": 24 },
+        "assignedBranch": { "type": "string", "minLength": 0, "maxLength": 100 },
+        "status": { "type": "string", "enum": ["active", "revoked"], "maxLength": 16 },
+        "invitedByEmail": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "Admin emails permitted to view staff invites (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "workspaceName", "staffName", "staffEmail", "role", "assignedBranch", "status", "invitedByEmail", "createdAt", "updatedAt"]
+    },
+    "WorkspaceBinding": {
+      "title": "WorkspaceBinding",
+      "description": "Deterministic O(1) mapping between an invited staff member UID and workspace owner UID.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "staffUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "staffEmail": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "inviteId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "enum": ["Admin", "Cashier", "Warehouse", "Accountant"], "maxLength": 24 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "staffUid", "staffEmail", "inviteId", "role", "createdAt", "updatedAt"]
+    },
+    "ShiftRegister": {
+      "title": "ShiftRegister",
+      "description": "Cashier shift register and Z-Report drawer reconciliation record.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shiftNumber": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "cashierName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "cashierEmail": { "type": "string", "minLength": 0, "maxLength": 120 },
+        "openedByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "openedAt": { "type": "string", "minLength": 10, "maxLength": 32 },
+        "closedAt": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "closedByName": { "type": "string", "minLength": 0, "maxLength": 100 },
+        "openingFloat": { "type": "number" },
+        "cashSalesTotal": { "type": "number" },
+        "mobileMoneyTotal": { "type": "number" },
+        "cardSalesTotal": { "type": "number" },
+        "creditSalesTotal": { "type": "number" },
+        "cashRefundsTotal": { "type": "number" },
+        "expectedCashInDrawer": { "type": "number" },
+        "countedCashInDrawer": { "type": "number" },
+        "varianceAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"], "maxLength": 16 },
+        "notes": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "authorizedEmails": { "type": "array", "description": "POS & Finance staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "shiftNumber", "cashierName", "cashierEmail", "openedByUid", "openedAt", "closedAt", "openingFloat", "cashSalesTotal", "mobileMoneyTotal", "cardSalesTotal", "creditSalesTotal", "cashRefundsTotal", "expectedCashInDrawer", "countedCashInDrawer", "varianceAmount", "status", "notes", "createdAt", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Inventory product SKU managed by the business with warranty and serial tracking rules.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 24 },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "stockQty": { "type": "number" },
+        "reorderLevel": { "type": "number" },
+        "supplierName": { "type": "string", "minLength": 0, "maxLength": 100 },
+        "status": { "type": "string", "enum": ["active", "archived"], "maxLength": 16 },
+        "warrantyDays": { "type": "number" },
+        "requiresSerial": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "Active workspace staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "sku", "name", "category", "unit", "costPrice", "sellingPrice", "stockQty", "reorderLevel", "supplierName", "status", "createdAt", "updatedAt"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Supplier purchase order, restocking log, and accounts payable credit invoice.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "poNumber": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "supplierName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "supplierInvoiceNo": { "type": "string", "minLength": 0, "maxLength": 60 },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "quantity": { "type": "number" },
+        "unitCost": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "balanceDue": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["paid", "partial", "unpaid"], "maxLength": 16 },
+        "dueDate": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "paymentMethod": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "status": { "type": "string", "enum": ["received", "cancelled"], "maxLength": 16 },
+        "notes": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "Warehouse & Finance staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "poNumber", "supplierName", "productId", "productName", "quantity", "unitCost", "totalCost", "status", "notes", "createdAt", "updatedAt"]
+    },
+    "SaleTransaction": {
+      "title": "SaleTransaction",
+      "description": "POS sale transaction, receipt header, and serial/warranty summary.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "receiptNumber": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "customerId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "cashierName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "paymentMethod": { "type": "string", "enum": ["Cash", "MTN Mobile Money", "Airtel Money", "Card", "Customer Credit"], "maxLength": 32 },
+        "itemCount": { "type": "number" },
+        "itemsSummary": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "serialsSummary": { "type": "string", "minLength": 0, "maxLength": 400 },
+        "warrantyUntil": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "shiftId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "subtotal": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "cogsAmount": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "changeDue": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "refunded"], "maxLength": 16 },
+        "notes": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "saleDate": { "type": "string", "minLength": 10, "maxLength": 32 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "POS & Finance staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "receiptNumber", "customerId", "customerName", "cashierName", "paymentMethod", "itemCount", "itemsSummary", "subtotal", "discountAmount", "taxAmount", "totalAmount", "cogsAmount", "amountPaid", "changeDue", "status", "notes", "saleDate", "createdAt", "updatedAt"]
+    },
+    "SaleItem": {
+      "title": "SaleItem",
+      "description": "Individual line item inside a POS sale transaction with serial/IMEI and warranty expiry.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "saleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "unitCost": { "type": "number" },
+        "lineDiscount": { "type": "number" },
+        "lineTotal": { "type": "number" },
+        "serialNumbers": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "warrantyDays": { "type": "number" },
+        "warrantyExpiryDate": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "POS & Finance staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "saleId", "productId", "sku", "productName", "quantity", "unitPrice", "unitCost", "lineDiscount", "lineTotal", "createdAt"]
+    },
+    "LedgerEntry": {
+      "title": "LedgerEntry",
+      "description": "Accounting general ledger entry tracking income, expenses, and payable settlements.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "entryRef": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "entryType": { "type": "string", "enum": ["income", "expense"], "maxLength": 16 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "sourceModule": { "type": "string", "enum": ["POS", "Inventory", "HR", "Manual", "Sales", "Payables"], "maxLength": 16 },
+        "entryDate": { "type": "string", "minLength": 10, "maxLength": 32 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "Finance & Admin staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "entryRef", "entryType", "category", "description", "amount", "paymentMethod", "sourceModule", "entryDate", "createdAt", "updatedAt"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "HR staff profile, payroll salary, attendance status, and assigned RBAC role.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "staffCode": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "roleTitle": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "department": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "phone": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "email": { "type": "string", "minLength": 0, "maxLength": 120 },
+        "monthlySalary": { "type": "number" },
+        "shiftSchedule": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "attendanceStatus": { "type": "string", "enum": ["Present", "On Shift", "Off Duty", "On Leave"], "maxLength": 24 },
+        "payrollStatus": { "type": "string", "enum": ["Paid", "Pending"], "maxLength": 16 },
+        "lastPaidDate": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "employmentStatus": { "type": "string", "enum": ["active", "inactive"], "maxLength": 16 },
+        "systemRole": { "type": "string", "enum": ["Admin", "Cashier", "Warehouse", "Accountant", "None"], "maxLength": 24 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "Admin-only staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "staffCode", "fullName", "roleTitle", "department", "phone", "email", "monthlySalary", "shiftSchedule", "attendanceStatus", "payrollStatus", "lastPaidDate", "employmentStatus", "createdAt", "updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "CRM customer record, loyalty points, credit balance, and purchase totals.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerCode": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "phone": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "email": { "type": "string", "minLength": 0, "maxLength": 120 },
+        "address": { "type": "string", "minLength": 0, "maxLength": 180 },
+        "segment": { "type": "string", "enum": ["Retail", "Wholesale", "VIP", "Corporate"], "maxLength": 24 },
+        "loyaltyPoints": { "type": "number" },
+        "creditBalance": { "type": "number" },
+        "totalSpent": { "type": "number" },
+        "ordersCount": { "type": "number" },
+        "lastOrderDate": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "notes": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorizedEmails": { "type": "array", "description": "POS & CRM staff emails (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "customerCode", "fullName", "phone", "email", "address", "segment", "loyaltyPoints", "creditBalance", "totalSpent", "ordersCount", "lastOrderDate", "notes", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator marker document.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/businessSettings/{ownerId}": {
+      "schema": { "$ref": "#/entities/BusinessSettings" },
+      "description": "Single tenant configuration document keyed by owner UID."
+    },
+    "/staffMembers/{inviteId}": {
+      "schema": { "$ref": "#/entities/StaffMember" },
+      "description": "Workspace staff login invitations and role-based access records."
+    },
+    "/workspaceBindings/{ownerId}/members/{staffUid}": {
+      "schema": { "$ref": "#/entities/WorkspaceBinding" },
+      "description": "Deterministic O(1) lookup document mapping workspace ownerId and staffUid to active StaffMember invite."
+    },
+    "/shiftRegisters/{shiftId}": {
+      "schema": { "$ref": "#/entities/ShiftRegister" },
+      "description": "Cashier shift register opening float and Z-Report drawer reconciliation logs."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Inventory catalog items owned by the tenant."
+    },
+    "/purchaseOrders/{poId}": {
+      "schema": { "$ref": "#/entities/PurchaseOrder" },
+      "description": "Supplier purchase, stock replenishment, and accounts payable credit records."
+    },
+    "/sales/{saleId}": {
+      "schema": { "$ref": "#/entities/SaleTransaction" },
+      "description": "Point of sale receipt headers, warranty summaries, and sales management records."
+    },
+    "/sales/{saleId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/SaleItem" },
+      "description": "Subcollection of line items belonging to a POS sale including serial/IMEI and warranty expiry."
+    },
+    "/ledgerEntries/{entryId}": {
+      "schema": { "$ref": "#/entities/LedgerEntry" },
+      "description": "General ledger income, expense, and supplier payable settlement entries."
+    },
+    "/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Human resources employee directory, shifts, and payroll records."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "CRM customer records including PII isolated strictly to owner/authorized staff."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted admin lookup documents."
+    }
+  }
+}

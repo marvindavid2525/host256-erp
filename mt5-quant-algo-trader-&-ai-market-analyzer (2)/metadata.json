@@ -1,0 +1,6 @@
+{
+  "name": "HOST256 ERP — Sales & Business Management",
+  "description": "Multi-role Point of Sale and ERP business management system featuring barcode scanning, shift Z-reports, 7-day serial/IMEI warranty verification, inventory restocking, supplier accounts payable, general ledger accounting, HR payroll, and CRM.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
